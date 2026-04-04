@@ -254,6 +254,35 @@ body{
 }
 
 /* ============================================================
+   Calculator
+   ============================================================ */
+.calc-wrap{
+  padding:6px;background:var(--gray);
+  height:100%;display:flex;flex-direction:column;gap:4px;
+}
+.calc-disp-row{display:flex;align-items:center;gap:4px;margin-bottom:2px;}
+.calc-mem-ind{width:14px;font-size:10px;font-weight:bold;color:#000;text-align:center;}
+.calc-display{
+  flex:1;background:#fff;box-shadow:var(--sunken);
+  padding:1px 6px;
+  font-family:'Courier New',Courier,monospace;font-size:20px;
+  text-align:right;min-height:28px;line-height:26px;
+  overflow:hidden;white-space:nowrap;
+  -webkit-user-select:text;user-select:text;
+}
+.calc-grid{
+  display:grid;
+  grid-template-columns:repeat(6,1fr);
+  gap:3px;
+}
+.calc-btn{padding:0;height:26px;font-size:11px;min-width:0;}
+.calc-btn.top{grid-column:span 2;}
+.calc-btn.mem{color:#000080;font-style:italic;}
+.calc-btn.op{font-weight:bold;}
+.calc-btn.eq{font-weight:bold;color:#800000;}
+.calc-btn.fn{color:#404040;}
+
+/* ============================================================
    Context Menu
    ============================================================ */
 #ctx{
@@ -320,6 +349,7 @@ body{
   <div class="sm-banner">Windows 95</div>
   <div class="sm-items">
     <div class="sm-item" data-app="notepad"><span class="si">📝</span>Notepad</div>
+    <div class="sm-item" data-app="calculator"><span class="si">🔢</span>Calculator</div>
     <div class="sm-item" data-app="mycomputer"><span class="si">💻</span>My Computer</div>
     <div class="sm-item" data-app="cmd"><span class="si">⌨️</span>MS-DOS Prompt</div>
     <div class="sm-item" data-app="about"><span class="si">ℹ️</span>About Windows 95</div>
@@ -863,6 +893,250 @@ class CmdPrompt {
 }
 
 // ============================================================
+//  Calculator Application
+// ============================================================
+class Calculator {
+  constructor(wm) {
+    this.wm      = wm;
+    this.wid     = null;
+    this.display = '0';
+    this.prev    = null;    // previous operand (string)
+    this.op      = null;    // pending operator
+    this.newInput= true;    // next digit replaces display
+    this.mem     = 0;
+    this._kbHandler = null;
+  }
+
+  open() {
+    if (this.wid && this.wm.wins.has(this.wid)) { this.wm.activate(this.wid); return; }
+    this.display = '0'; this.prev = null; this.op = null; this.newInput = true;
+
+    const menubar = `
+      <span class="mi" data-calcmenu="view">View</span>
+      <span class="mi" data-calcmenu="edit">Edit</span>
+      <span class="mi" data-calcmenu="help">Help</span>`;
+
+    this.wid = this.wm.create({
+      title: 'Calculator', icon: '🔢',
+      width: 242, height: 248, x: 220, y: 110,
+      resizable: false,
+      menubar,
+      build: (el, id) => this._build(el, id),
+      onClose: () => {
+        if (this._kbHandler) document.removeEventListener('keydown', this._kbHandler);
+        this._kbHandler = null; this.wid = null; return true;
+      }
+    });
+  }
+
+  _build(el, id) {
+    el.style.background = 'var(--gray)';
+    el.innerHTML = `
+      <div class="calc-wrap">
+        <div class="calc-disp-row">
+          <span class="calc-mem-ind" id="calc_mi_${id}"></span>
+          <div class="calc-display" id="calc_d_${id}">0</div>
+        </div>
+        <div class="calc-grid" id="calc_g_${id}"></div>
+      </div>`;
+
+    // Button definitions: [label, cssClass, action]
+    const BTNS = [
+      // Row 1 — each spans 2 of 6 grid columns
+      ['Back','fn top','back'], ['CE','fn top','ce'], ['C','fn top','c'],
+      // Row 2
+      ['MC','mem','mc'], ['7','num','7'], ['8','num','8'], ['9','num','9'], ['/','op','/'], ['sqrt','fn','sqrt'],
+      // Row 3
+      ['MR','mem','mr'], ['4','num','4'], ['5','num','5'], ['6','num','6'], ['*','op','*'], ['%','fn','pct'],
+      // Row 4
+      ['MS','mem','ms'], ['1','num','1'], ['2','num','2'], ['3','num','3'], ['-','op','-'], ['1/x','fn','inv'],
+      // Row 5
+      ['M+','mem','m+'], ['0','num','0'], ['+/-','fn','sign'], ['.','num','.'], ['+','op','+'], ['=','eq','='],
+    ];
+
+    const grid = document.getElementById('calc_g_' + id);
+    BTNS.forEach(([lbl, cls, act]) => {
+      const b = document.createElement('button');
+      b.className = 'btn calc-btn ' + cls;
+      b.textContent = lbl;
+      b.addEventListener('mousedown', e => e.stopPropagation()); // don't lose window focus
+      b.addEventListener('click', e => { e.stopPropagation(); this._act(act, id); });
+      grid.appendChild(b);
+    });
+
+    // Menu bar
+    document.getElementById(id).querySelectorAll('[data-calcmenu]').forEach(mi => {
+      mi.addEventListener('click', e => { e.stopPropagation(); this._menu(mi.dataset.calcmenu, e, id); });
+    });
+
+    // Keyboard handler — only fires when this window is active
+    this._kbHandler = e => {
+      if (this.wm.active !== this.wid) return;
+      const k = e.key;
+      if ('0123456789'.includes(k))        { e.preventDefault(); this._act(k, id); }
+      else if (k === '+')                  { e.preventDefault(); this._act('+', id); }
+      else if (k === '-')                  { e.preventDefault(); this._act('-', id); }
+      else if (k === '*')                  { e.preventDefault(); this._act('*', id); }
+      else if (k === '/')                  { e.preventDefault(); this._act('/', id); }
+      else if (k === '.')                  { e.preventDefault(); this._act('.', id); }
+      else if (k === 'Enter' || k === '=') { e.preventDefault(); this._act('=', id); }
+      else if (k === 'Backspace')          { e.preventDefault(); this._act('back', id); }
+      else if (k === 'Escape')             { e.preventDefault(); this._act('c', id); }
+      else if (k === 'Delete')             { e.preventDefault(); this._act('ce', id); }
+    };
+    document.addEventListener('keydown', this._kbHandler);
+  }
+
+  _menu(m, e, id) {
+    if (m === 'view') {
+      showCtx([
+        {label:'✓ Standard'},
+        {label:'Scientific', disabled:true},
+      ], e.clientX, e.clientY);
+    } else if (m === 'edit') {
+      showCtx([
+        {label:'Copy',  action:()=>{ try{navigator.clipboard.writeText(this.display);}catch(_){} }},
+        {label:'Paste', action:()=>{
+          try { navigator.clipboard.readText().then(t => {
+            const n=parseFloat(t.trim()); if(!isNaN(n)) { this._setDisplay(this._fmt(n),id); this.newInput=true; }
+          }); } catch(_){}
+        }},
+      ], e.clientX, e.clientY);
+    } else if (m === 'help') {
+      showCtx([{label:'About Calculator', action:()=>{
+        wm.create({ title:'About Calculator', icon:'🔢', width:260, height:150, resizable:false,
+          build:(el2,wid2)=>{
+            el2.innerHTML=`<div class="dlg-body">
+              <div class="dlg-row"><span style="font-size:36px">🔢</span>
+              <div><b>Calculator</b><br>Windows 95<br><small>Standard Mode</small></div></div>
+              <div class="dlg-btns"><button class="btn" style="width:70px" id="calc_ok_${wid2}">OK</button></div>
+            </div>`;
+            document.getElementById('calc_ok_'+wid2).addEventListener('click',()=>wm.close(wid2));
+          }
+        });
+      }}], e.clientX, e.clientY);
+    }
+  }
+
+  _setDisplay(val, id) {
+    this.display = val;
+    const el = document.getElementById('calc_d_' + id);
+    if (el) el.textContent = val;
+  }
+
+  _updMem(id) {
+    const el = document.getElementById('calc_mi_' + id);
+    if (el) el.textContent = this.mem !== 0 ? 'M' : '';
+  }
+
+  _act(a, id) {
+    let d = this.display;
+
+    // ── Digit input ──
+    if ('0123456789'.includes(a)) {
+      if (this.newInput) { d = (a === '0') ? '0' : a; this.newInput = false; }
+      else { d = (d === '0') ? a : (d.length < 15 ? d + a : d); }
+      this._setDisplay(d, id); return;
+    }
+
+    // ── Decimal point ──
+    if (a === '.') {
+      if (this.newInput) { d = '0.'; this.newInput = false; }
+      else if (!d.includes('.')) { d += '.'; }
+      this._setDisplay(d, id); return;
+    }
+
+    // ── Backspace ──
+    if (a === 'back') {
+      if (!this.newInput && d !== '0') {
+        d = d.length > 1 ? d.slice(0, -1) : '0';
+        if (d === '-') d = '0';
+        this._setDisplay(d, id);
+      }
+      return;
+    }
+
+    // ── Clear entry / Clear all ──
+    if (a === 'ce') { this._setDisplay('0', id); this.newInput = true; return; }
+    if (a === 'c')  { this._setDisplay('0', id); this.prev=null; this.op=null; this.newInput=true; return; }
+
+    // ── Sign toggle ──
+    if (a === 'sign') {
+      if (d !== '0') {
+        d = d.startsWith('-') ? d.slice(1) : '-' + d;
+        this._setDisplay(d, id);
+      }
+      return;
+    }
+
+    // ── Unary functions ──
+    if (a === 'sqrt') {
+      const n = parseFloat(d);
+      if (n < 0) { this._setDisplay('Invalid input for function.', id); this.newInput=true; }
+      else       { this._setDisplay(this._fmt(Math.sqrt(n)), id); this.newInput=true; }
+      return;
+    }
+    if (a === 'pct') {
+      const n = parseFloat(d);
+      const base = this.prev !== null ? parseFloat(this.prev) : 100;
+      this._setDisplay(this._fmt(base * n / 100), id); this.newInput=true; return;
+    }
+    if (a === 'inv') {
+      const n = parseFloat(d);
+      if (n === 0) { this._setDisplay('Cannot divide by zero.', id); this.newInput=true; }
+      else         { this._setDisplay(this._fmt(1 / n), id); this.newInput=true; }
+      return;
+    }
+
+    // ── Memory ──
+    if (a === 'mc') { this.mem=0;              this._updMem(id); return; }
+    if (a === 'mr') { this._setDisplay(this._fmt(this.mem),id); this.newInput=true; return; }
+    if (a === 'ms') { this.mem=parseFloat(d);  this._updMem(id); this.newInput=true; return; }
+    if (a === 'm+') { this.mem+=parseFloat(d); this._updMem(id); this.newInput=true; return; }
+
+    // ── Binary operators ──
+    if (['+','-','*','/'].includes(a)) {
+      if (this.op && !this.newInput) this._calc(id);  // chain ops
+      this.prev    = this.display;
+      this.op      = a;
+      this.newInput= true;
+      return;
+    }
+
+    // ── Equals ──
+    if (a === '=') {
+      if (this.op) { this._calc(id); this.op=null; }
+      return;
+    }
+  }
+
+  _calc(id) {
+    const a = parseFloat(this.prev), b = parseFloat(this.display);
+    let result;
+    switch (this.op) {
+      case '+': result = a + b; break;
+      case '-': result = a - b; break;
+      case '*': result = a * b; break;
+      case '/':
+        if (b === 0) { this._setDisplay('Cannot divide by zero.', id); this.prev=null; this.newInput=true; return; }
+        result = a / b; break;
+      default: return;
+    }
+    if (!isFinite(result)) { this._setDisplay('Overflow', id); this.prev=null; this.newInput=true; return; }
+    this.prev = String(result);
+    this._setDisplay(this._fmt(result), id);
+    this.newInput = true;
+  }
+
+  // Format number — strip floating-point noise, limit to 12 significant digits
+  _fmt(n) {
+    if (!isFinite(n)) return 'Overflow';
+    const s = parseFloat(n.toPrecision(12));
+    return String(s);
+  }
+}
+
+// ============================================================
 //  About Dialog
 // ============================================================
 function openAbout() {
@@ -940,6 +1214,7 @@ function initStartMenu() {
       e.stopPropagation(); sm.style.display='none';
       const a=it.dataset.app;
       if (a==='notepad')    notepad.open();
+      else if (a==='calculator') calculator.open();
       else if (a==='mycomputer') mycomputer.open();
       else if (a==='cmd')   cmd.open();
       else if (a==='about') openAbout();
@@ -1002,6 +1277,7 @@ const notepad    = new Notepad(wm);
 const mycomputer = new MyComputer(wm);
 const recyclebin = new RecycleBin(wm);
 const cmd        = new CmdPrompt(wm);
+const calculator = new Calculator(wm);
 
 // Place desktop icons
 new DesktopIcon({ icon:'💻', label:'My Computer', x:12, y:10,
@@ -1018,7 +1294,11 @@ new DesktopIcon({ icon:'📝', label:'Notepad',     x:12, y:180,
 });
 new DesktopIcon({ icon:'⌨️', label:'MS-DOS\nPrompt', x:12, y:265,
   onOpen:()=>cmd.open() });
-new DesktopIcon({ icon:'ℹ️', label:'About',       x:12, y:350,
+new DesktopIcon({ icon:'🔢', label:'Calculator',   x:12, y:350,
+  onOpen:()=>calculator.open(),
+  onCtx: e=>showCtx([{label:'Open',action:()=>calculator.open()},{label:'Properties',action:()=>{}}],e.clientX,e.clientY)
+});
+new DesktopIcon({ icon:'ℹ️', label:'About',       x:12, y:435,
   onOpen:()=>openAbout() });
 
 // Clock tick
