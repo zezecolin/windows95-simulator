@@ -1255,7 +1255,7 @@ class Calculator {
     }
     if (a === 'fact') {
       const n = Math.floor(parseFloat(d));
-      if (n < 0 || n > 170) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+      if (n < 0 || n > 170) { this._setDisplay('Invalid input for function.', id); this.newInput = true; } // 170! is the largest factorial before JS overflow
       else { let f = 1; for (let i = 2; i <= n; i++) f *= i; this._setDisplay(this._fmt(f), id); this.newInput = true; }
       return;
     }
