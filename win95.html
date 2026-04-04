@@ -281,6 +281,8 @@ body{
 .calc-btn.op{font-weight:bold;}
 .calc-btn.eq{font-weight:bold;color:#800000;}
 .calc-btn.fn{color:#404040;}
+.calc-btn.sci{color:#400040;}
+.calc-btn.sci-toggle-on{box-shadow:var(--sunken) !important;}
 
 /* ============================================================
    Context Menu
@@ -576,7 +578,7 @@ function showCtx(items, cx, cy) {
     const d = document.createElement('div');
     d.className = 'cmi' + (it.disabled?' disabled':'');
     d.innerHTML = `<span>${it.label}</span>${it.key?`<span style="color:#808080">${it.key}</span>`:''}`;
-    if (!it.disabled && it.action) d.addEventListener('click', e => { e.stopPropagation(); closeCtx(); it.action(); });
+    if (!it.disabled && it.action) d.addEventListener('mousedown', e => { e.stopPropagation(); closeCtx(); it.action(); });
     m.appendChild(d);
   });
   // Clamp to viewport
@@ -904,6 +906,9 @@ class Calculator {
     this.op      = null;    // pending operator
     this.newInput= true;    // next digit replaces display
     this.mem     = 0;
+    this.sciMode = false;   // standard vs scientific mode
+    this.inv     = false;   // inverse functions toggle
+    this.useDeg  = true;    // degrees vs radians
     this._kbHandler = null;
   }
 
@@ -916,9 +921,12 @@ class Calculator {
       <span class="mi" data-calcmenu="edit">Edit</span>
       <span class="mi" data-calcmenu="help">Help</span>`;
 
+    const w = 242;
+    const h = 248;
+
     this.wid = this.wm.create({
       title: 'Calculator', icon: '🔢',
-      width: 242, height: 248, x: 220, y: 110,
+      width: w, height: h, x: 220, y: 110,
       resizable: false,
       menubar,
       build: (el, id) => this._build(el, id),
@@ -940,6 +948,38 @@ class Calculator {
         <div class="calc-grid" id="calc_g_${id}"></div>
       </div>`;
 
+    const grid = document.getElementById('calc_g_' + id);
+
+    // Scientific-mode extra rows
+    if (this.sciMode) {
+      // [label, cssClass, action, elementId]
+      const SCI_BTNS = [
+        // Row A: inv toggle, trig, constants
+        ['Inv',  'sci', 'inv-toggle', 'calc_inv_'+id],
+        ['sin',  'sci', 'sin',        'calc_sin_'+id],
+        ['cos',  'sci', 'cos',        'calc_cos_'+id],
+        ['tan',  'sci', 'tan',        'calc_tan_'+id],
+        ['π',    'sci', 'pi',         null],
+        ['e',    'sci', 'eul',        null],
+        // Row B: deg/rad toggle, log, ln, x², xʸ, n!
+        ['Deg',  'sci', 'deg-toggle', 'calc_deg_'+id],
+        ['log',  'sci', 'log',        'calc_log_'+id],
+        ['ln',   'sci', 'ln',         'calc_ln_'+id],
+        ['x²',   'sci', 'sq',         'calc_sq_'+id],
+        ['xʸ',   'sci', 'pow',        'calc_pow_'+id],
+        ['n!',   'sci', 'fact',       null],
+      ];
+      SCI_BTNS.forEach(([lbl, cls, act, eid]) => {
+        const b = document.createElement('button');
+        b.className = 'btn calc-btn ' + cls;
+        b.textContent = lbl;
+        if (eid) b.id = eid;
+        b.addEventListener('mousedown', e => e.stopPropagation());
+        b.addEventListener('click', e => { e.stopPropagation(); this._act(act, id); });
+        grid.appendChild(b);
+      });
+    }
+
     // Button definitions: [label, cssClass, action]
     const BTNS = [
       // Row 1 — each spans 2 of 6 grid columns
@@ -954,7 +994,6 @@ class Calculator {
       ['M+','mem','m+'], ['0','num','0'], ['+/-','fn','sign'], ['.','num','.'], ['+','op','+'], ['=','eq','='],
     ];
 
-    const grid = document.getElementById('calc_g_' + id);
     BTNS.forEach(([lbl, cls, act]) => {
       const b = document.createElement('button');
       b.className = 'btn calc-btn ' + cls;
@@ -990,8 +1029,8 @@ class Calculator {
   _menu(m, e, id) {
     if (m === 'view') {
       showCtx([
-        {label:'✓ Standard'},
-        {label:'Scientific', disabled:true},
+        {label: (this.sciMode ? '' : '✓ ') + 'Standard',   action: () => { if ( this.sciMode) this._switchMode(false, id); }},
+        {label: (this.sciMode ? '✓ ' : '') + 'Scientific', action: () => { if (!this.sciMode) this._switchMode(true,  id); }},
       ], e.clientX, e.clientY);
     } else if (m === 'edit') {
       showCtx([
@@ -1008,7 +1047,7 @@ class Calculator {
           build:(el2,wid2)=>{
             el2.innerHTML=`<div class="dlg-body">
               <div class="dlg-row"><span style="font-size:36px">🔢</span>
-              <div><b>Calculator</b><br>Windows 95<br><small>Standard Mode</small></div></div>
+              <div><b>Calculator</b><br>Windows 95<br><small>${this.sciMode ? 'Scientific' : 'Standard'} Mode</small></div></div>
               <div class="dlg-btns"><button class="btn" style="width:70px" id="calc_ok_${wid2}">OK</button></div>
             </div>`;
             document.getElementById('calc_ok_'+wid2).addEventListener('click',()=>wm.close(wid2));
@@ -1016,6 +1055,26 @@ class Calculator {
         });
       }}], e.clientX, e.clientY);
     }
+  }
+
+  _switchMode(sci, id) {
+    this.sciMode = sci;
+    this.inv     = false;
+
+    // Remove old keyboard handler (a new one will be installed by _build)
+    if (this._kbHandler) { document.removeEventListener('keydown', this._kbHandler); this._kbHandler = null; }
+
+    // Resize the window element in-place
+    const winEl = document.getElementById(id);
+    if (winEl) winEl.style.height = (sci ? 310 : 248) + 'px';
+
+    // Rebuild button grid inside the existing window content area
+    const contentEl = document.getElementById('wc_' + id);
+    if (contentEl) this._build(contentEl, id);
+
+    // Restore display (innerHTML reset it to '0')
+    this._setDisplay(this.display, id);
+    this._updMem(id);
   }
 
   _setDisplay(val, id) {
@@ -1094,6 +1153,113 @@ class Calculator {
     if (a === 'ms') { this.mem=parseFloat(d);  this._updMem(id); this.newInput=true; return; }
     if (a === 'm+') { this.mem+=parseFloat(d); this._updMem(id); this.newInput=true; return; }
 
+    // ── Scientific: inv / deg-rad toggles ──
+    if (a === 'inv-toggle') {
+      this.inv = !this.inv;
+      const invBtn = document.getElementById('calc_inv_' + id);
+      if (invBtn) invBtn.classList.toggle('sci-toggle-on', this.inv);
+      const sinBtn = document.getElementById('calc_sin_' + id);
+      if (sinBtn) sinBtn.textContent = this.inv ? 'asin' : 'sin';
+      const cosBtn = document.getElementById('calc_cos_' + id);
+      if (cosBtn) cosBtn.textContent = this.inv ? 'acos' : 'cos';
+      const tanBtn = document.getElementById('calc_tan_' + id);
+      if (tanBtn) tanBtn.textContent = this.inv ? 'atan' : 'tan';
+      const logBtn = document.getElementById('calc_log_' + id);
+      if (logBtn) logBtn.textContent = this.inv ? '10\u02E3' : 'log';
+      const lnBtn  = document.getElementById('calc_ln_'  + id);
+      if (lnBtn)  lnBtn.textContent  = this.inv ? 'e\u02E3' : 'ln';
+      const sqBtn  = document.getElementById('calc_sq_'  + id);
+      if (sqBtn)  sqBtn.textContent  = this.inv ? '\u221ax' : 'x\u00B2';
+      const powBtn = document.getElementById('calc_pow_' + id);
+      if (powBtn) powBtn.textContent = this.inv ? 'y\u221ax' : 'x\u02B8';
+      return;
+    }
+    if (a === 'deg-toggle') {
+      this.useDeg = !this.useDeg;
+      const degBtn = document.getElementById('calc_deg_' + id);
+      if (degBtn) degBtn.textContent = this.useDeg ? 'Deg' : 'Rad';
+      return;
+    }
+
+    // ── Scientific: constants ──
+    if (a === 'pi')  { this._setDisplay(this._fmt(Math.PI), id); this.newInput = true; return; }
+    if (a === 'eul') { this._setDisplay(this._fmt(Math.E),  id); this.newInput = true; return; }
+
+    // ── Scientific: trig functions ──
+    if (a === 'sin') {
+      const n = parseFloat(d);
+      if (this.inv) {
+        if (n < -1 || n > 1) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+        else { const v = Math.asin(n); this._setDisplay(this._fmt(this.useDeg ? v * 180 / Math.PI : v), id); this.newInput = true; }
+      } else {
+        this._setDisplay(this._fmt(Math.sin(this.useDeg ? n * Math.PI / 180 : n)), id); this.newInput = true;
+      }
+      return;
+    }
+    if (a === 'cos') {
+      const n = parseFloat(d);
+      if (this.inv) {
+        if (n < -1 || n > 1) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+        else { const v = Math.acos(n); this._setDisplay(this._fmt(this.useDeg ? v * 180 / Math.PI : v), id); this.newInput = true; }
+      } else {
+        this._setDisplay(this._fmt(Math.cos(this.useDeg ? n * Math.PI / 180 : n)), id); this.newInput = true;
+      }
+      return;
+    }
+    if (a === 'tan') {
+      const n = parseFloat(d);
+      if (this.inv) {
+        const v = Math.atan(n); this._setDisplay(this._fmt(this.useDeg ? v * 180 / Math.PI : v), id); this.newInput = true;
+      } else {
+        const v = Math.tan(this.useDeg ? n * Math.PI / 180 : n);
+        if (!isFinite(v)) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+        else { this._setDisplay(this._fmt(v), id); this.newInput = true; }
+      }
+      return;
+    }
+
+    // ── Scientific: log functions ──
+    if (a === 'log') {
+      const n = parseFloat(d);
+      if (this.inv) { this._setDisplay(this._fmt(Math.pow(10, n)), id); this.newInput = true; }
+      else if (n <= 0) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+      else { this._setDisplay(this._fmt(Math.log10(n)), id); this.newInput = true; }
+      return;
+    }
+    if (a === 'ln') {
+      const n = parseFloat(d);
+      if (this.inv) { this._setDisplay(this._fmt(Math.exp(n)), id); this.newInput = true; }
+      else if (n <= 0) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+      else { this._setDisplay(this._fmt(Math.log(n)), id); this.newInput = true; }
+      return;
+    }
+
+    // ── Scientific: x² / xʸ / n! ──
+    if (a === 'sq') {
+      const n = parseFloat(d);
+      if (this.inv) {
+        if (n < 0) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+        else { this._setDisplay(this._fmt(Math.sqrt(n)), id); this.newInput = true; }
+      } else {
+        this._setDisplay(this._fmt(n * n), id); this.newInput = true;
+      }
+      return;
+    }
+    if (a === 'pow') {
+      // xʸ / y√x are binary operations; chain if needed
+      if (this.op && !this.newInput) this._calc(id);
+      this.prev     = this.display;
+      this.op       = this.inv ? 'y\u221a' : '^';
+      this.newInput = true;
+      return;
+    }
+    if (a === 'fact') {
+      const n = Math.floor(parseFloat(d));
+      if (n < 0 || n > 170) { this._setDisplay('Invalid input for function.', id); this.newInput = true; }
+      else { let f = 1; for (let i = 2; i <= n; i++) f *= i; this._setDisplay(this._fmt(f), id); this.newInput = true; }
+      return;
+    }
+
     // ── Binary operators ──
     if (['+','-','*','/'].includes(a)) {
       if (this.op && !this.newInput) this._calc(id);  // chain ops
@@ -1120,6 +1286,10 @@ class Calculator {
       case '/':
         if (b === 0) { this._setDisplay('Cannot divide by zero.', id); this.prev=null; this.newInput=true; return; }
         result = a / b; break;
+      case '^': result = Math.pow(a, b); break;
+      case 'y\u221a':
+        if (b === 0) { this._setDisplay('Invalid input for function.', id); this.prev=null; this.newInput=true; return; }
+        result = Math.pow(a, 1 / b); break;
       default: return;
     }
     if (!isFinite(result)) { this._setDisplay('Overflow', id); this.prev=null; this.newInput=true; return; }
