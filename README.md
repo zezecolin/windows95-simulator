@@ -105,7 +105,243 @@ The project follows an **Object-Oriented** design with clearly separated classes
 | `MyComputer` | Drive/folder viewer with nested window support |
 | `CmdPrompt` | MS-DOS terminal with command parser and history |
 | `RecycleBin` | Empty recycle bin window |
+| `Calculator` | Standard / scientific calculator with memory and keyboard support |
 | `DesktopIcon` | Desktop icon with single/double-click detection |
+
+---
+
+## 🔄 Agent Operational Flow Framework
+
+> This section describes the full runtime flow of the Windows 95 Simulator — from page load to user interaction.
+
+### 1. Bootstrap / Initialization Sequence
+
+When the HTML file is opened in the browser the script block at the bottom of `<body>` runs synchronously, wiring everything together in a fixed order:
+
+```
+Page Load
+    │
+    ├─► new WindowManager()        // creates wins Map, sets zBase=100
+    │
+    ├─► new Notepad(wm)            // stores ref to wm, reads localStorage key
+    ├─► new MyComputer(wm)
+    ├─► new RecycleBin(wm)
+    ├─► new CmdPrompt(wm)          // initialises cwd = 'C:\WINDOWS', hist[]
+    ├─► new Calculator(wm)         // initialises display state & sci mode
+    │
+    ├─► new DesktopIcon × 6        // appends .dicon divs to #desktop
+    │     (My Computer, Recycle Bin, Notepad, MS-DOS, Calculator, About)
+    │
+    ├─► tick()  +  setInterval(tick, 1000)   // live clock in tray
+    │
+    ├─► initStartMenu()            // wires Start button & menu items
+    │
+    ├─► initDesktopCtx()           // wires desktop right-click
+    │
+    └─► setTimeout(showWelcome, 400ms)       // delayed welcome dialog
+```
+
+---
+
+### 2. Window Lifecycle
+
+Every visible window passes through the following states, all managed by `WindowManager`:
+
+```
+         ┌──────────────────────────────────────────────┐
+         │            wm.create(cfg)                    │
+         │  • Build DOM (.window div + titlebar/grip)   │
+         │  • Add to wins Map                           │
+         │  • Wire drag / resize / control events       │
+         │  • Create taskbar button                     │
+         │  • Call cfg.build(contentEl, id)             │
+         │  • wm.activate(id)                           │
+         └─────────────────┬────────────────────────────┘
+                           │
+                    ┌──────▼──────┐
+                    │   ACTIVE    │◄──────────────────────────────┐
+                    │  (visible,  │                               │
+                    │  z-top,     │  click window / taskbar btn   │
+                    │  blue title)│  (when minimized or inactive) │
+                    └──┬────┬─────┘                               │
+         minimize()    │    │ toggleMax()                         │
+              ┌────────┘    └────────┐                            │
+              ▼                      ▼                            │
+       ┌────────────┐        ┌──────────────┐                     │
+       │ MINIMIZED  │        │  MAXIMIZED   │                     │
+       │ display:   │        │  fills whole │                     │
+       │ none, in   │        │  viewport    │                     │
+       │ taskbar    │        │  (prevRect   │                     │
+       └──────┬─────┘        │  saved)      │                     │
+              │              └──────┬───────┘                     │
+              │restore()            │toggleMax() again             │
+              └─────────────────────┴─────────────────────────────┘
+
+         Any state ──► wm.close(id) ──► remove DOM + taskbar btn
+                                         + delete from wins Map
+                                         + call cfg.onClose()
+```
+
+---
+
+### 3. Event Handling Flow
+
+The simulator uses three layers of event delegation:
+
+```
+Browser Event
+     │
+     ├─ mousedown on .window
+     │        └─► wm.activate(id)   (capture phase, true)
+     │
+     ├─ mousedown on .wtitlebar  (drag)
+     │        ├─► record ox/oy, ol/ot
+     │        ├─► attach document mousemove  → reposition window (clamped)
+     │        └─► attach document mouseup   → remove mousemove listener
+     │
+     ├─ mousedown on .wgrip  (resize)
+     │        ├─► record sx/sy, sw/sh
+     │        ├─► attach document mousemove  → resize window (min 200×100)
+     │        └─► attach document mouseup   → remove mousemove listener
+     │
+     ├─ click on .dicon  (desktop icon)
+     │        ├─► click #1 within 400 ms  → select highlight only
+     │        └─► click #2 within 400 ms  → onOpen() (open the app)
+     │
+     ├─ contextmenu on #desktop / .dicon
+     │        └─► showCtx(items, cx, cy)
+     │                ├─► build #ctx div with .cmi items
+     │                ├─► clamp position inside viewport
+     │                └─► document mousedown (once) → closeCtx()
+     │                     (item actions use mousedown + stopPropagation
+     │                      so they fire before the outside-click handler)
+     │
+     ├─ click on #start-btn
+     │        └─► toggle #start-menu display block/none
+     │
+     └─ click on .sm-item[data-app]
+              └─► <App>.open()   (see App Flow below)
+```
+
+---
+
+### 4. Application Open / Singleton Flow
+
+Each application uses a **singleton guard** (`this.wid`) to prevent duplicate windows:
+
+```
+<App>.open()
+     │
+     ├─[wid exists in wins Map]──► wm.activate(wid)   // just focus
+     │
+     └─[no open window]
+            │
+            ├─► wm.create({ title, icon, width, height,
+            │               menubar, statusbar, build, onClose })
+            │
+            └─► build(contentEl, id)
+                     ├─ inject HTML into content area
+                     ├─ wire app-specific event listeners
+                     └─ (Notepad)     restore from localStorage
+                        (CmdPrompt)   focus input, print banner
+                        (Calculator)  render button grid, attach keydown
+                        (MyComputer)  render drive icons
+```
+
+---
+
+### 5. Data Flow & Persistence
+
+```
+┌─────────────────────────────────────────────────────┐
+│                   In-Memory State                   │
+│                                                     │
+│  WindowManager.wins  Map<id, {el, minimized, …}>    │
+│  CmdPrompt.hist      string[]   (command history)   │
+│  CmdPrompt.cwd       string     (current directory) │
+│  Calculator.display  string     (displayed number)  │
+│  Calculator.prev     string     (left operand)      │
+│  Calculator.op       string     (pending operator)  │
+│  Calculator.mem      number     (memory register)   │
+└──────────────────────────┬──────────────────────────┘
+                           │
+                  persisted across
+                  page reloads via
+                           │
+                    ┌──────▼───────┐
+                    │ localStorage │
+                    │  key:        │
+                    │  "win95_np"  │
+                    │  (Notepad    │
+                    │   content)   │
+                    └──────────────┘
+```
+
+---
+
+### 6. Component Interaction Map
+
+```
+                 ┌──────────────────────┐
+                 │     WindowManager    │
+                 │  wins, zBase, active │
+                 └──┬──┬──┬──┬──┬──────┘
+    create/activate │  │  │  │  │ close/minimize
+          ┌─────────┘  │  │  │  └─────────────┐
+          ▼            │  │  │                 ▼
+       Notepad         │  │  │           Calculator
+      (wm ref)         │  │  │            (wm ref)
+          │            │  │  │                 │
+       File I/O     MyComputer  CmdPrompt    Keyboard
+      localStorage  (wm ref)   (wm ref)     events
+                       │           │
+                 Drive viewer  DOS parser
+                 sub-windows   hist array
+
+     DesktopIcon ──► double-click ──► <App>.open()
+     showCtx ──► menu items ──► <App>.open() / wm.close()
+     initStartMenu ──► .sm-item click ──► <App>.open()
+     tick() ──► setInterval ──► #clock textContent
+```
+
+---
+
+### 7. Full Startup-to-Interaction Timeline
+
+```
+t=0ms    HTML parsed, <script> executes
+          └─ wm, notepad, mycomputer, recyclebin, cmd, calculator created
+          └─ 6 DesktopIcons added to #desktop
+          └─ tick(), initStartMenu(), initDesktopCtx() called
+
+t=400ms   Welcome dialog appears via wm.create()
+
+t=1000ms  First clock tick (and every 1 s thereafter)
+
+User double-clicks "Notepad" icon
+          └─ DesktopIcon click handler fires twice within 400 ms
+          └─ notepad.open() called
+          └─ wm.create() builds window DOM, appends to #desktop
+          └─ build() restores textarea from localStorage
+          └─ wm.activate() sets z-index, marks .active on taskbar btn
+
+User types in Notepad textarea
+          └─ 'input' event → this.mod=true, _upTitle(), _upStatus()
+
+User presses Ctrl+S
+          └─ 'keydown' event → notepad.save()
+          └─ localStorage.setItem('win95_np', textarea.value)
+
+User clicks taskbar button (active window)
+          └─ wm.minimize(id) → el.style.display='none'
+
+User clicks taskbar button again (minimized)
+          └─ wm.restore(id) → el.style.display='', wm.activate(id)
+
+User clicks ✕ (close)
+          └─ wm.close(id) → el.remove(), taskbar btn removed,
+             wins.delete(id), onClose() sets notepad.wid=null
+```
 
 ---
 
