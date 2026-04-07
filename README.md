@@ -28,6 +28,11 @@ A highly faithful Windows 95 desktop experience built entirely with pure HTML/CS
 - Taskbar buttons — click to minimize/restore/activate
 - Inactive windows display grayed title bars
 
+### 📊 Graphify Repository Viewer
+- Opens a scrollable **repository summary** document for [safishamsi/graphify](https://github.com/safishamsi/graphify)
+- Covers: project overview, pipeline stages, confidence labels, supported file types, module responsibilities, tech stack, and install instructions
+- Accessible from the desktop icon and Start Menu
+
 ### 📝 Notepad
 - Full text editor with syntax-free editing
 - **Ctrl+S** to save to `localStorage`
@@ -105,6 +110,8 @@ The project follows an **Object-Oriented** design with clearly separated classes
 | `MyComputer` | Drive/folder viewer with nested window support |
 | `CmdPrompt` | MS-DOS terminal with command parser and history |
 | `RecycleBin` | Empty recycle bin window |
+| `Calculator` | Scientific calculator with standard and scientific modes |
+| `Graphify` | Scrollable summary viewer for the safishamsi/graphify repository |
 | `DesktopIcon` | Desktop icon with single/double-click detection |
 
 ---
