@@ -327,6 +327,36 @@ body{
 .dlg-body{padding:16px;display:flex;flex-direction:column;gap:12px;}
 .dlg-row{display:flex;align-items:center;gap:12px;}
 .dlg-btns{display:flex;justify-content:center;gap:8px;margin-top:4px;}
+
+/* ============================================================
+   Graphify Viewer
+   ============================================================ */
+.gfy-doc{
+  padding:12px 14px;overflow-y:auto;height:100%;
+  background:#fff;-webkit-user-select:text;user-select:text;
+  font-size:11px;line-height:1.6;
+}
+.gfy-doc h1{font-size:14px;margin:0 0 6px;border-bottom:2px solid #000080;padding-bottom:3px;color:#000080;}
+.gfy-doc h2{font-size:12px;margin:10px 0 4px;color:#000080;}
+.gfy-doc p{margin:0 0 6px;}
+.gfy-doc ul{margin:0 0 6px 18px;padding:0;}
+.gfy-doc ul li{margin-bottom:2px;}
+.gfy-doc table{border-collapse:collapse;width:100%;margin-bottom:8px;font-size:11px;}
+.gfy-doc table th{background:#000080;color:#fff;padding:2px 6px;text-align:left;}
+.gfy-doc table td{padding:2px 6px;border-bottom:1px solid #c0c0c0;}
+.gfy-doc table tr:nth-child(even) td{background:#f0f0f0;}
+.gfy-doc code{font-family:'Courier New',monospace;background:#e8e8e8;padding:0 2px;}
+.gfy-doc .gfy-badge{
+  display:inline-block;background:#000080;color:#fff;
+  padding:1px 6px;font-size:10px;margin-right:4px;
+}
+.gfy-doc .gfy-pipeline{
+  display:flex;flex-wrap:wrap;align-items:center;gap:4px;
+  background:#f8f8f8;border:1px solid #c0c0c0;padding:6px 8px;margin-bottom:8px;
+  font-family:'Courier New',monospace;font-size:10px;
+}
+.gfy-doc .gfy-pipeline span{background:#000080;color:#fff;padding:1px 5px;}
+.gfy-doc .gfy-pipeline .arr{color:#808080;}
 </style>
 </head>
 <body>
@@ -354,6 +384,7 @@ body{
     <div class="sm-item" data-app="calculator"><span class="si">🔢</span>Calculator</div>
     <div class="sm-item" data-app="mycomputer"><span class="si">💻</span>My Computer</div>
     <div class="sm-item" data-app="cmd"><span class="si">⌨️</span>MS-DOS Prompt</div>
+    <div class="sm-item" data-app="graphify"><span class="si">🕸️</span>Graphify</div>
     <div class="sm-item" data-app="about"><span class="si">ℹ️</span>About Windows 95</div>
     <div class="sm-sep"></div>
     <div class="sm-item" id="sm-shutdown"><span class="si">🔴</span>Shut Down…</div>
@@ -1307,6 +1338,136 @@ class Calculator {
 }
 
 // ============================================================
+//  Graphify — Repository Summary Viewer
+// ============================================================
+class Graphify {
+  constructor(wm) {
+    this.wm  = wm;
+    this.wid = null;
+  }
+  open() {
+    if (this.wid && this.wm.wins.has(this.wid)) { this.wm.activate(this.wid); return; }
+    this.wid = this.wm.create({
+      title:'Graphify — Repository Summary', icon:'🕸️',
+      width:560, height:440, x:100, y:50,
+      build: (el) => {
+        el.innerHTML = `<div class="gfy-doc">
+<h1>🕸️ graphify</h1>
+<p>
+  <span class="gfy-badge">AI Skill</span>
+  <span class="gfy-badge">Python 3.10+</span>
+  <span class="gfy-badge">PyPI: graphifyy</span>
+</p>
+<p>
+  An <b>AI coding-assistant skill</b> that turns any folder — code, PDFs, markdown,
+  screenshots, diagrams — into an interactive knowledge graph. Type
+  <code>/graphify .</code> in Claude&nbsp;Code, Codex, OpenCode, or OpenClaw.
+</p>
+
+<h2>How It Works</h2>
+<div class="gfy-pipeline">
+  <span>detect()</span><span class="arr">→</span>
+  <span>extract()</span><span class="arr">→</span>
+  <span>build_graph()</span><span class="arr">→</span>
+  <span>cluster()</span><span class="arr">→</span>
+  <span>analyze()</span><span class="arr">→</span>
+  <span>report()</span><span class="arr">→</span>
+  <span>export()</span>
+</div>
+<ul>
+  <li><b>Pass 1 — AST:</b> deterministic tree-sitter extraction of classes, functions, imports, call graphs, and rationale comments — no LLM.</li>
+  <li><b>Pass 2 — Claude subagents</b> run in parallel over docs, PDFs, and images to extract concepts and relationships.</li>
+  <li>Results merged into a <b>NetworkX</b> graph, clustered with <b>Leiden</b> community detection (topology-based — no embeddings).</li>
+</ul>
+
+<h2>Key Outputs</h2>
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>graph.html</code></td><td>Interactive vis.js graph — click, search, filter by community</td></tr>
+  <tr><td><code>GRAPH_REPORT.md</code></td><td>God nodes, surprising connections, suggested questions</td></tr>
+  <tr><td><code>graph.json</code></td><td>Persistent graph — query weeks later without re-reading</td></tr>
+  <tr><td><code>cache/</code></td><td>SHA-256 cache — re-runs only process changed files</td></tr>
+</table>
+
+<h2>Confidence Labels</h2>
+<table>
+  <tr><th>Label</th><th>Meaning</th></tr>
+  <tr><td><code>EXTRACTED</code></td><td>Explicitly present in source (import, direct call) — confidence 1.0</td></tr>
+  <tr><td><code>INFERRED</code></td><td>Reasonable deduction with a 0.0–1.0 confidence score</td></tr>
+  <tr><td><code>AMBIGUOUS</code></td><td>Uncertain — flagged for human review in GRAPH_REPORT.md</td></tr>
+</table>
+
+<h2>Supported File Types</h2>
+<table>
+  <tr><th>Type</th><th>Extensions</th><th>Method</th></tr>
+  <tr><td>Code</td><td>.py .ts .js .go .rs .java .c .cpp .rb .cs …</td><td>AST + call-graph (local)</td></tr>
+  <tr><td>Docs</td><td>.md .txt .rst</td><td>Claude: concepts + relationships</td></tr>
+  <tr><td>Papers</td><td>.pdf</td><td>Claude: citation mining</td></tr>
+  <tr><td>Images</td><td>.png .jpg .webp .gif</td><td>Claude vision (any language)</td></tr>
+</table>
+
+<h2>Notable Features</h2>
+<ul>
+  <li><b>71.5× fewer tokens</b> per query vs reading raw files (52-file corpus: Karpathy repos + papers + images)</li>
+  <li><b>God nodes</b> — highest-degree concepts; <b>hyperedges</b> — group relationships for 3+ nodes</li>
+  <li><b>Auto-sync</b> (<code>--watch</code>) — graph updates as files change; code rebuilds instantly (AST only)</li>
+  <li><b>Git hooks</b> — rebuild on commit &amp; branch switch (<code>graphify hook install</code>)</li>
+  <li><b>Wiki export</b> (<code>--wiki</code>) — Wikipedia-style markdown articles per community</li>
+  <li><b>MCP server</b> (<code>--mcp</code>) — stdio server for model context protocol integration</li>
+  <li><b>Neo4j export</b> (<code>--neo4j</code>) — Cypher statements or direct push</li>
+  <li><b>Always-on hook</b> — PreToolUse hook (Claude Code) or AGENTS.md surfaces graph before every search</li>
+</ul>
+
+<h2>Architecture — Modules</h2>
+<table>
+  <tr><th>Module</th><th>Responsibility</th></tr>
+  <tr><td><code>detect.py</code></td><td>Collect files, filter by extension</td></tr>
+  <tr><td><code>extract.py</code></td><td>AST extraction + LLM subagent calls → {nodes, edges}</td></tr>
+  <tr><td><code>build.py</code></td><td>Merge extraction dicts → NetworkX graph</td></tr>
+  <tr><td><code>cluster.py</code></td><td>Leiden community detection on graph topology</td></tr>
+  <tr><td><code>analyze.py</code></td><td>God nodes, surprising connections, suggested questions</td></tr>
+  <tr><td><code>report.py</code></td><td>Render GRAPH_REPORT.md</td></tr>
+  <tr><td><code>export.py</code></td><td>graph.html (vis.js), graph.json, graph.svg, Obsidian vault</td></tr>
+  <tr><td><code>ingest.py</code></td><td>Fetch URL → save to corpus</td></tr>
+  <tr><td><code>cache.py</code></td><td>SHA-256 cache: split files into cached / uncached</td></tr>
+  <tr><td><code>security.py</code></td><td>validate_url, safe_fetch, sanitize_label, validate_graph_path</td></tr>
+  <tr><td><code>serve.py</code></td><td>MCP stdio server</td></tr>
+  <tr><td><code>watch.py</code></td><td>File-change watcher; writes flag on change</td></tr>
+  <tr><td><code>benchmark.py</code></td><td>Token-reduction benchmark vs raw corpus</td></tr>
+  <tr><td><code>hooks.py</code></td><td>Git post-commit / post-checkout hook management</td></tr>
+  <tr><td><code>wiki.py</code></td><td>Agent-crawlable wiki (index.md + per-community articles)</td></tr>
+</table>
+
+<h2>Tech Stack</h2>
+<p>
+  <b>NetworkX</b> (graph) · <b>Leiden / graspologic</b> (clustering) ·
+  <b>tree-sitter</b> (AST) · <b>vis.js</b> (interactive HTML) ·
+  <b>Claude / GPT-4</b> (semantic extraction) · No server · No embeddings · No Neo4j required
+</p>
+
+<h2>Privacy</h2>
+<p>
+  Code files are processed <b>locally</b> via tree-sitter — no file contents leave your machine for code.
+  Docs, papers, and images are sent to your assistant's model API using <b>your own API key</b>.
+  No telemetry or analytics of any kind.
+</p>
+
+<h2>Install</h2>
+<p>
+  <code>pip install graphifyy &amp;&amp; graphify install</code><br>
+  Then open your AI coding assistant and type <code>/graphify .</code>
+</p>
+<p>
+  Source: <b>github.com/safishamsi/graphify</b>
+</p>
+</div>`;
+      },
+      onClose: () => { this.wid = null; return true; }
+    });
+  }
+}
+
+// ============================================================
 //  About Dialog
 // ============================================================
 function openAbout() {
@@ -1387,6 +1548,7 @@ function initStartMenu() {
       else if (a==='calculator') calculator.open();
       else if (a==='mycomputer') mycomputer.open();
       else if (a==='cmd')   cmd.open();
+      else if (a==='graphify') graphify.open();
       else if (a==='about') openAbout();
     });
   });
@@ -1448,6 +1610,7 @@ const mycomputer = new MyComputer(wm);
 const recyclebin = new RecycleBin(wm);
 const cmd        = new CmdPrompt(wm);
 const calculator = new Calculator(wm);
+const graphify   = new Graphify(wm);
 
 // Place desktop icons
 new DesktopIcon({ icon:'💻', label:'My Computer', x:12, y:10,
@@ -1470,6 +1633,10 @@ new DesktopIcon({ icon:'🔢', label:'Calculator',   x:12, y:350,
 });
 new DesktopIcon({ icon:'ℹ️', label:'About',       x:12, y:435,
   onOpen:()=>openAbout() });
+new DesktopIcon({ icon:'🕸️', label:'Graphify',    x:12, y:520,
+  onOpen:()=>graphify.open(),
+  onCtx: e=>showCtx([{label:'Open',action:()=>graphify.open()},{sep:true},{label:'Properties',action:()=>{}}],e.clientX,e.clientY)
+});
 
 // Clock tick
 tick(); setInterval(tick, 1000);
